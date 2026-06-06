@@ -7,6 +7,17 @@ type StoredNote = {
   updatedAt: string | null;
 };
 
+type CloudNote = {
+  id: string;
+  title: string;
+  content: string;
+};
+
+type CloudNotesDocument = {
+  v: 1;
+  notes: CloudNote[];
+};
+
 type AuthState = {
   configured: boolean;
   authenticated: boolean;
@@ -42,7 +53,7 @@ const rememberedPasswordKey = "cloud-notes:remembered-password";
 
 const password = ref("");
 const rememberPassword = ref(false);
-const note = ref("");
+const notes = ref<CloudNote[]>([]);
 const auth = ref<AuthState>({
   configured: false,
   authenticated: false,
@@ -56,6 +67,8 @@ const isSaving = ref(false);
 const status = ref("输入密码后读取便签");
 const errorMessage = ref("");
 
+const canUseNotes = computed(() => auth.value.authenticated && isUnlocked.value);
+
 const updatedAtText = computed(() => {
   if (!updatedAt.value) {
     return "尚未保存";
@@ -66,6 +79,51 @@ const updatedAtText = computed(() => {
     timeStyle: "short"
   }).format(new Date(updatedAt.value));
 });
+
+function createNote(title = "新便签", content = ""): CloudNote {
+  return {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    title,
+    content
+  };
+}
+
+function normalizeNotesDocument(plainText: string): CloudNote[] {
+  if (!plainText.trim()) {
+    return [createNote()];
+  }
+
+  try {
+    const parsed = JSON.parse(plainText) as Partial<CloudNotesDocument>;
+    if (parsed.v === 1 && Array.isArray(parsed.notes)) {
+      return parsed.notes.map((item, index) => ({
+        id: typeof item.id === "string" ? item.id : createNote().id,
+        title:
+          typeof item.title === "string" && item.title.trim()
+            ? item.title
+            : `便签 ${index + 1}`,
+        content: typeof item.content === "string" ? item.content : ""
+      }));
+    }
+  } catch {
+    return [createNote("旧便签", plainText)];
+  }
+
+  return [createNote("旧便签", plainText)];
+}
+
+function serializeNotesDocument(): string {
+  const document: CloudNotesDocument = {
+    v: 1,
+    notes: notes.value.map((item) => ({
+      id: item.id,
+      title: item.title,
+      content: item.content
+    }))
+  };
+
+  return JSON.stringify(document);
+}
 
 onMounted(async () => {
   await refreshAuth();
@@ -329,20 +387,20 @@ async function unlock() {
     updatedAt.value = stored.updatedAt;
 
     if (!stored.payload) {
-      note.value = "";
+      notes.value = [createNote()];
       isUnlocked.value = true;
       syncRememberedPassword();
       status.value = "新便签";
       return;
     }
 
-    note.value = await decryptNote(stored.payload, password.value);
+    notes.value = normalizeNotesDocument(await decryptNote(stored.payload, password.value));
     isUnlocked.value = true;
     syncRememberedPassword();
     status.value = "已解锁";
   } catch (error) {
     isUnlocked.value = false;
-    note.value = "";
+    notes.value = [];
     errorMessage.value =
       error instanceof Error ? error.message : "密码错误或服务不可用";
     status.value = "解锁失败";
@@ -362,7 +420,7 @@ async function save() {
   status.value = "正在加密保存";
 
   try {
-    const payload = await encryptNote(note.value, password.value);
+    const payload = await encryptNote(serializeNotesDocument(), password.value);
     const response = await fetch(`${apiBase}/api/note`, {
       method: "PUT",
       credentials: "include",
@@ -395,7 +453,7 @@ async function save() {
 }
 
 function lock() {
-  note.value = "";
+  notes.value = [];
   if (!rememberPassword.value) {
     password.value = "";
   }
@@ -413,12 +471,39 @@ function syncRememberedPassword() {
 
   localStorage.removeItem(rememberedPasswordKey);
 }
+
+function addNote() {
+  notes.value.push(createNote(`便签 ${notes.value.length + 1}`));
+  status.value = "已新建便签";
+}
+
+function deleteNote(noteId: string) {
+  notes.value = notes.value.filter((item) => item.id !== noteId);
+  status.value = "已删除便签";
+}
+
+async function copyNoteContent(content: string) {
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(content);
+  } else {
+    const textarea = document.createElement("textarea");
+    textarea.value = content;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+
+  status.value = "已复制内容";
+}
 </script>
 
 <template>
   <main class="shell">
-    <section class="panel">
-      <header class="header">
+    <header class="topbar">
+      <div class="brand">
         <div>
           <p class="eyebrow">Client-side encrypted</p>
           <h1>加密云便签</h1>
@@ -435,7 +520,7 @@ function syncRememberedPassword() {
           </span>
           <span class="status">{{ status }}</span>
         </div>
-      </header>
+      </div>
 
       <section v-if="isCheckingAuth" class="auth-panel">
         <p>正在检查登录状态</p>
@@ -459,38 +544,73 @@ function syncRememberedPassword() {
           <button :disabled="isLoading" type="submit">
             {{ isLoading ? "读取中" : "读取" }}
           </button>
+          <button :disabled="!canUseNotes" type="button" @click="addNote">新建</button>
+          <button :disabled="!canUseNotes || isSaving" type="button" @click="save">
+            {{ isSaving ? "保存中" : "保存" }}
+          </button>
           <button :disabled="!isUnlocked" type="button" class="secondary" @click="lock">
             锁定
           </button>
           <button type="button" class="secondary" @click="logout">退出</button>
         </form>
 
-        <label class="remember-row">
-          <input v-model="rememberPassword" type="checkbox" />
-          <span>在此浏览器记住密码</span>
-        </label>
+        <div class="meta-row">
+          <label class="remember-row">
+            <input v-model="rememberPassword" type="checkbox" />
+            <span>在此浏览器记住密码</span>
+          </label>
+          <span>最后保存：{{ updatedAtText }}</span>
+        </div>
       </template>
 
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+    </header>
 
-      <textarea
-        v-model="note"
-        :disabled="!auth.authenticated || !isUnlocked"
-        class="note-editor"
-        placeholder="解锁后编辑便签"
-        spellcheck="false"
-      />
+    <section class="workspace">
+      <section v-if="!canUseNotes" class="empty-state">
+        <p>登录并输入密码读取后开始编辑</p>
+      </section>
 
-      <footer class="actions">
-        <span>最后保存：{{ updatedAtText }}</span>
-        <button
-          :disabled="!auth.authenticated || !isUnlocked || isSaving"
-          type="button"
-          @click="save"
-        >
-          {{ isSaving ? "保存中" : "加密保存" }}
-        </button>
-      </footer>
+      <section v-else-if="notes.length === 0" class="empty-state">
+        <button type="button" @click="addNote">新建便签</button>
+      </section>
+
+      <section v-else class="notes-grid">
+        <article v-for="item in notes" :key="item.id" class="note-card">
+          <header class="note-card-header">
+            <input
+              v-model="item.title"
+              class="note-title-input"
+              placeholder="标题"
+              type="text"
+            />
+            <div class="note-tools">
+              <button
+                class="icon-button"
+                title="复制内容"
+                type="button"
+                @click="copyNoteContent(item.content)"
+              >
+                复制
+              </button>
+              <button
+                class="icon-button danger"
+                title="删除"
+                type="button"
+                @click="deleteNote(item.id)"
+              >
+                删除
+              </button>
+            </div>
+          </header>
+          <textarea
+            v-model="item.content"
+            class="note-content-input"
+            placeholder="内容"
+            spellcheck="false"
+          />
+        </article>
+      </section>
     </section>
   </main>
 </template>

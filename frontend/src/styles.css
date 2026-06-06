@@ -62,34 +62,30 @@ button.secondary:hover:not(:disabled) {
 }
 
 .shell {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
-  padding: 32px;
-  place-items: center;
+  padding: 0;
 }
 
-.panel {
-  width: min(920px, 100%);
-  min-height: min(720px, calc(100vh - 64px));
+.topbar {
   display: grid;
-  grid-template-rows: auto auto auto 1fr auto;
-  gap: 18px;
-  padding: 28px;
-  border: 1px solid #d8e0ea;
-  border-radius: 8px;
+  gap: 12px;
+  border-bottom: 1px solid #d8e0ea;
+  padding: 14px 18px;
   background: #ffffff;
-  box-shadow: 0 24px 60px rgb(24 33 47 / 10%);
+  box-shadow: 0 8px 24px rgb(24 33 47 / 8%);
+  z-index: 1;
 }
 
-.header,
-.actions,
+.brand,
 .unlock-bar {
   display: flex;
   gap: 12px;
   align-items: center;
 }
 
-.header,
+.brand,
 .header-actions {
   justify-content: space-between;
 }
@@ -109,7 +105,7 @@ button.secondary:hover:not(:disabled) {
 
 h1 {
   margin: 0;
-  font-size: clamp(1.7rem, 5vw, 2.6rem);
+  font-size: 1.6rem;
   line-height: 1.1;
 }
 
@@ -147,7 +143,7 @@ h1 {
 
 .unlock-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(220px, 420px) auto auto auto auto auto;
 }
 
 .password-input {
@@ -162,7 +158,8 @@ h1 {
 }
 
 .password-input:focus,
-.note-editor:focus {
+.note-title-input:focus,
+.note-content-input:focus {
   border-color: #156a5c;
   box-shadow: 0 0 0 3px rgb(21 106 92 / 14%);
 }
@@ -183,9 +180,17 @@ h1 {
   accent-color: #156a5c;
 }
 
+.meta-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  color: #5d6b7d;
+  font-size: 0.95rem;
+}
+
 .auth-panel {
   display: flex;
-  min-height: 92px;
+  min-height: 44px;
   align-items: center;
 }
 
@@ -206,51 +211,117 @@ h1 {
   background: #fff0f0;
 }
 
-.note-editor {
-  width: 100%;
-  min-height: 420px;
-  resize: vertical;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 16px;
-  color: #18212f;
-  background: #fbfdff;
-  line-height: 1.7;
-  outline: none;
-}
-
-.note-editor:disabled {
-  color: #8c98a8;
-  background: #f4f7fa;
-}
-
-.actions {
-  justify-content: space-between;
-  color: #5d6b7d;
-}
-
-.actions button {
-  height: 44px;
-}
-
 .unlock-bar button {
   height: 44px;
 }
 
+.workspace {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 18px;
+  overflow: auto;
+}
+
+.empty-state {
+  display: flex;
+  min-height: 160px;
+  align-items: center;
+  color: #5d6b7d;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.empty-state button {
+  height: 44px;
+}
+
+.notes-grid {
+  height: calc(100vh - 168px);
+  min-height: 360px;
+  column-fill: auto;
+  column-gap: 16px;
+  column-width: 300px;
+}
+
+.note-card {
+  display: inline-flex;
+  width: 300px;
+  min-height: 240px;
+  margin: 0 0 16px;
+  break-inside: avoid;
+  flex-direction: column;
+  border: 1px solid #d4dee9;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgb(24 33 47 / 8%);
+}
+
+.note-card-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid #e3eaf2;
+  padding: 10px;
+}
+
+.note-title-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  color: #18212f;
+  background: transparent;
+  font-weight: 700;
+  outline: none;
+}
+
+.note-tools {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-button {
+  height: 30px;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 0.85rem;
+}
+
+.icon-button.danger {
+  color: #ffffff;
+  background: #9f1d1d;
+}
+
+.icon-button.danger:hover:not(:disabled) {
+  background: #861717;
+}
+
+.note-content-input {
+  width: 100%;
+  min-height: 190px;
+  flex: 1;
+  resize: vertical;
+  border: 0;
+  padding: 12px;
+  color: #18212f;
+  background: #fbfdff;
+  line-height: 1.6;
+  outline: none;
+}
+
 @media (max-width: 640px) {
   .shell {
+    min-height: 100vh;
+  }
+
+  .topbar {
     padding: 14px;
-    place-items: stretch;
   }
 
-  .panel {
-    min-height: calc(100vh - 28px);
-    padding: 18px;
-  }
-
-  .header,
+  .brand,
   .header-actions,
-  .actions {
+  .meta-row {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -260,8 +331,21 @@ h1 {
   }
 
   .unlock-bar button,
-  .auth-panel button,
-  .actions button {
+  .auth-panel button {
+    width: 100%;
+  }
+
+  .workspace {
+    padding: 14px;
+  }
+
+  .notes-grid {
+    height: auto;
+    min-height: 0;
+    column-width: auto;
+  }
+
+  .note-card {
     width: 100%;
   }
 }
