@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import sodium from "libsodium-wrappers";
+import sodium from "libsodium-wrappers-sumo";
 import { computed, ref } from "vue";
 
 type StoredNote = {
