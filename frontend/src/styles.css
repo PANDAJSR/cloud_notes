@@ -137,6 +137,22 @@ h1 {
   box-shadow: 0 0 0 3px rgb(21 106 92 / 14%);
 }
 
+.remember-row {
+  display: inline-flex;
+  width: fit-content;
+  gap: 8px;
+  align-items: center;
+  color: #5d6b7d;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.remember-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: #156a5c;
+}
+
 .error {
   margin: 0;
   border-radius: 8px;

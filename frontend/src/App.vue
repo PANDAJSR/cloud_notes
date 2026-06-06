@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import sodium from "libsodium-wrappers-sumo";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 type StoredNote = {
   payload: string | null;
@@ -29,8 +29,10 @@ type EncryptedPayload = {
 };
 
 const apiBase = import.meta.env.VITE_API_BASE ?? "";
+const rememberedPasswordKey = "cloud-notes:remembered-password";
 
 const password = ref("");
+const rememberPassword = ref(false);
 const note = ref("");
 const updatedAt = ref<string | null>(null);
 const isUnlocked = ref(false);
@@ -48,6 +50,32 @@ const updatedAtText = computed(() => {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(updatedAt.value));
+});
+
+onMounted(() => {
+  const rememberedPassword = localStorage.getItem(rememberedPasswordKey);
+  if (rememberedPassword) {
+    password.value = rememberedPassword;
+    rememberPassword.value = true;
+    status.value = "已填入保存的密码";
+  }
+});
+
+watch(rememberPassword, (shouldRemember) => {
+  if (!shouldRemember) {
+    localStorage.removeItem(rememberedPasswordKey);
+    return;
+  }
+
+  if (password.value) {
+    localStorage.setItem(rememberedPasswordKey, password.value);
+  }
+});
+
+watch(password, (nextPassword) => {
+  if (rememberPassword.value && nextPassword) {
+    localStorage.setItem(rememberedPasswordKey, nextPassword);
+  }
 });
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -232,12 +260,14 @@ async function unlock() {
     if (!stored.payload) {
       note.value = "";
       isUnlocked.value = true;
+      syncRememberedPassword();
       status.value = "新便签";
       return;
     }
 
     note.value = await decryptNote(stored.payload, password.value);
     isUnlocked.value = true;
+    syncRememberedPassword();
     status.value = "已解锁";
   } catch (error) {
     isUnlocked.value = false;
@@ -277,6 +307,7 @@ async function save() {
     const stored = (await response.json()) as StoredNote;
     updatedAt.value = stored.updatedAt;
     isUnlocked.value = true;
+    syncRememberedPassword();
     status.value = "已保存";
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "保存失败";
@@ -288,11 +319,22 @@ async function save() {
 
 function lock() {
   note.value = "";
-  password.value = "";
+  if (!rememberPassword.value) {
+    password.value = "";
+  }
   updatedAt.value = null;
   isUnlocked.value = false;
   errorMessage.value = "";
   status.value = "已锁定";
+}
+
+function syncRememberedPassword() {
+  if (rememberPassword.value && password.value) {
+    localStorage.setItem(rememberedPasswordKey, password.value);
+    return;
+  }
+
+  localStorage.removeItem(rememberedPasswordKey);
 }
 </script>
 
@@ -322,6 +364,11 @@ function lock() {
           锁定
         </button>
       </form>
+
+      <label class="remember-row">
+        <input v-model="rememberPassword" type="checkbox" />
+        <span>在此浏览器记住密码</span>
+      </label>
 
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
 
