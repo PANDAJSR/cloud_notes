@@ -16,9 +16,7 @@ type EncryptedPayload = {
   data: string;
 };
 
-const apiBase =
-  import.meta.env.VITE_API_BASE ??
-  `${window.location.protocol}//${window.location.hostname}:1873`;
+const apiBase = import.meta.env.VITE_API_BASE ?? "/api";
 
 const password = ref("");
 const note = ref("");
