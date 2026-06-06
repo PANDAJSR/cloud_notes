@@ -29,5 +29,27 @@ npm run build
 ## 生产运行
 
 ```bash
-PORT=1873 DATA_FILE=/opt/cloud_notes/data/note.json npm run start -w backend
+PORT=1873 \
+DATA_FILE=/opt/cloud_notes/data/note.json \
+PUBLIC_BASE_URL=http://47.92.254.25 \
+NOTES_PATH=/notes/ \
+GITHUB_CLIENT_ID=xxx \
+GITHUB_CLIENT_SECRET=xxx \
+GITHUB_ALLOWED_LOGINS=PANDAJSR \
+npm run start -w backend
 ```
+
+## GitHub OAuth
+
+后端会先校验 GitHub 登录态，再允许读取或保存密文。
+
+需要创建一个 GitHub OAuth App：
+
+- Homepage URL: `http://47.92.254.25/notes/`
+- Authorization callback URL: `http://47.92.254.25/api/auth/github/callback`
+
+创建后把 Client ID、Client Secret 和允许访问的 GitHub 登录名配置到后端环境变量：
+
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+- `GITHUB_ALLOWED_LOGINS`

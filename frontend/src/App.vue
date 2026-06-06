@@ -7,6 +7,15 @@ type StoredNote = {
   updatedAt: string | null;
 };
 
+type AuthState = {
+  configured: boolean;
+  authenticated: boolean;
+  user: {
+    login: string;
+    avatarUrl: string | null;
+  } | null;
+};
+
 type LegacyEncryptedPayload = {
   v: 1;
   kdf: "PBKDF2-SHA256";
@@ -34,8 +43,14 @@ const rememberedPasswordKey = "cloud-notes:remembered-password";
 const password = ref("");
 const rememberPassword = ref(false);
 const note = ref("");
+const auth = ref<AuthState>({
+  configured: false,
+  authenticated: false,
+  user: null
+});
 const updatedAt = ref<string | null>(null);
 const isUnlocked = ref(false);
+const isCheckingAuth = ref(true);
 const isLoading = ref(false);
 const isSaving = ref(false);
 const status = ref("输入密码后读取便签");
@@ -52,7 +67,9 @@ const updatedAtText = computed(() => {
   }).format(new Date(updatedAt.value));
 });
 
-onMounted(() => {
+onMounted(async () => {
+  await refreshAuth();
+
   const rememberedPassword = localStorage.getItem(rememberedPasswordKey);
   if (rememberedPassword) {
     password.value = rememberedPassword;
@@ -60,6 +77,53 @@ onMounted(() => {
     status.value = "已填入保存的密码";
   }
 });
+
+async function refreshAuth() {
+  isCheckingAuth.value = true;
+  errorMessage.value = "";
+
+  try {
+    const response = await fetch(`${apiBase}/api/auth/me`, {
+      credentials: "include"
+    });
+
+    if (!response.ok) {
+      throw new Error("登录状态读取失败");
+    }
+
+    auth.value = (await response.json()) as AuthState;
+    if (!auth.value.configured) {
+      status.value = "OAuth 未配置";
+      errorMessage.value = "服务端还没有配置 GitHub OAuth";
+      return;
+    }
+
+    status.value = auth.value.authenticated ? "已登录" : "请先登录";
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : "登录状态读取失败";
+  } finally {
+    isCheckingAuth.value = false;
+  }
+}
+
+function loginWithGitHub() {
+  window.location.href = `${apiBase}/api/auth/github`;
+}
+
+async function logout() {
+  await fetch(`${apiBase}/api/auth/logout`, {
+    method: "POST",
+    credentials: "include"
+  });
+  auth.value = {
+    configured: auth.value.configured,
+    authenticated: false,
+    user: null
+  };
+  lock();
+  status.value = "已退出登录";
+}
 
 watch(rememberPassword, (shouldRemember) => {
   if (!shouldRemember) {
@@ -236,7 +300,14 @@ async function decryptLegacyNote(
 }
 
 async function fetchNote(): Promise<StoredNote> {
-  const response = await fetch(`${apiBase}/api/note`);
+  const response = await fetch(`${apiBase}/api/note`, {
+    credentials: "include"
+  });
+  if (response.status === 401) {
+    auth.value = { ...auth.value, authenticated: false, user: null };
+    throw new Error("请先使用 GitHub 登录");
+  }
+
   if (!response.ok) {
     throw new Error("读取失败");
   }
@@ -294,6 +365,7 @@ async function save() {
     const payload = await encryptNote(note.value, password.value);
     const response = await fetch(`${apiBase}/api/note`, {
       method: "PUT",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json"
       },
@@ -301,6 +373,11 @@ async function save() {
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        auth.value = { ...auth.value, authenticated: false, user: null };
+        throw new Error("请先使用 GitHub 登录");
+      }
+
       throw new Error("保存失败");
     }
 
@@ -346,35 +423,59 @@ function syncRememberedPassword() {
           <p class="eyebrow">Client-side encrypted</p>
           <h1>加密云便签</h1>
         </div>
-        <span class="status">{{ status }}</span>
+        <div class="header-actions">
+          <span v-if="auth.user" class="user-badge">
+            <img
+              v-if="auth.user.avatarUrl"
+              :src="auth.user.avatarUrl"
+              alt=""
+              class="avatar"
+            />
+            {{ auth.user.login }}
+          </span>
+          <span class="status">{{ status }}</span>
+        </div>
       </header>
 
-      <form class="unlock-bar" @submit.prevent="unlock">
-        <input
-          v-model="password"
-          autocomplete="current-password"
-          class="password-input"
-          placeholder="输入密码"
-          type="password"
-        />
-        <button :disabled="isLoading" type="submit">
-          {{ isLoading ? "读取中" : "读取" }}
-        </button>
-        <button :disabled="!isUnlocked" type="button" class="secondary" @click="lock">
-          锁定
-        </button>
-      </form>
+      <section v-if="isCheckingAuth" class="auth-panel">
+        <p>正在检查登录状态</p>
+      </section>
 
-      <label class="remember-row">
-        <input v-model="rememberPassword" type="checkbox" />
-        <span>在此浏览器记住密码</span>
-      </label>
+      <section v-else-if="!auth.authenticated" class="auth-panel">
+        <button :disabled="!auth.configured" type="button" @click="loginWithGitHub">
+          使用 GitHub 登录
+        </button>
+      </section>
+
+      <template v-else>
+        <form class="unlock-bar" @submit.prevent="unlock">
+          <input
+            v-model="password"
+            autocomplete="current-password"
+            class="password-input"
+            placeholder="输入密码"
+            type="password"
+          />
+          <button :disabled="isLoading" type="submit">
+            {{ isLoading ? "读取中" : "读取" }}
+          </button>
+          <button :disabled="!isUnlocked" type="button" class="secondary" @click="lock">
+            锁定
+          </button>
+          <button type="button" class="secondary" @click="logout">退出</button>
+        </form>
+
+        <label class="remember-row">
+          <input v-model="rememberPassword" type="checkbox" />
+          <span>在此浏览器记住密码</span>
+        </label>
+      </template>
 
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
 
       <textarea
         v-model="note"
-        :disabled="!isUnlocked"
+        :disabled="!auth.authenticated || !isUnlocked"
         class="note-editor"
         placeholder="解锁后编辑便签"
         spellcheck="false"
@@ -382,7 +483,11 @@ function syncRememberedPassword() {
 
       <footer class="actions">
         <span>最后保存：{{ updatedAtText }}</span>
-        <button :disabled="!isUnlocked || isSaving" type="button" @click="save">
+        <button
+          :disabled="!auth.authenticated || !isUnlocked || isSaving"
+          type="button"
+          @click="save"
+        >
           {{ isSaving ? "保存中" : "加密保存" }}
         </button>
       </footer>

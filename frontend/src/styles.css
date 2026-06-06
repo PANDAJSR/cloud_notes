@@ -89,8 +89,15 @@ button.secondary:hover:not(:disabled) {
   align-items: center;
 }
 
-.header {
+.header,
+.header-actions {
   justify-content: space-between;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .eyebrow {
@@ -115,9 +122,32 @@ h1 {
   font-size: 0.92rem;
 }
 
+.user-badge {
+  display: inline-flex;
+  max-width: 220px;
+  min-height: 36px;
+  gap: 8px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #263445;
+  background: #eef3f8;
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avatar {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
 .unlock-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
 
 .password-input {
@@ -151,6 +181,21 @@ h1 {
   width: 16px;
   height: 16px;
   accent-color: #156a5c;
+}
+
+.auth-panel {
+  display: flex;
+  min-height: 92px;
+  align-items: center;
+}
+
+.auth-panel p {
+  margin: 0;
+  color: #5d6b7d;
+}
+
+.auth-panel button {
+  height: 44px;
 }
 
 .error {
@@ -204,6 +249,7 @@ h1 {
   }
 
   .header,
+  .header-actions,
   .actions {
     align-items: flex-start;
     flex-direction: column;
@@ -214,6 +260,7 @@ h1 {
   }
 
   .unlock-bar button,
+  .auth-panel button,
   .actions button {
     width: 100%;
   }
