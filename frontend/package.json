@@ -10,6 +10,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "libsodium-wrappers": "^0.8.4",
     "vue": "^3.4.31"
   },
   "devDependencies": {

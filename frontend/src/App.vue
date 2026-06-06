@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import sodium from "libsodium-wrappers";
 import { computed, ref } from "vue";
 
 type StoredNote = {
@@ -6,13 +7,24 @@ type StoredNote = {
   updatedAt: string | null;
 };
 
-type EncryptedPayload = {
+type LegacyEncryptedPayload = {
   v: 1;
   kdf: "PBKDF2-SHA256";
   cipher: "AES-GCM";
   iterations: number;
   salt: string;
   iv: string;
+  data: string;
+};
+
+type EncryptedPayload = {
+  v: 2;
+  kdf: "libsodium-crypto_pwhash";
+  cipher: "xchacha20poly1305";
+  opslimit: number;
+  memlimit: number;
+  salt: string;
+  nonce: string;
   data: string;
 };
 
@@ -46,12 +58,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function createRandomBytes(length: number): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(new ArrayBuffer(length));
-  crypto.getRandomValues(bytes);
-  return bytes;
-}
-
 function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value);
   const bytes = new Uint8Array(new ArrayBuffer(binary.length));
@@ -61,7 +67,15 @@ function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-async function deriveKey(passwordText: string, salt: BufferSource, iterations: number) {
+async function deriveLegacyKey(
+  passwordText: string,
+  salt: BufferSource,
+  iterations: number
+) {
+  if (!crypto.subtle) {
+    throw new Error("旧密文需要 HTTPS 环境读取");
+  }
+
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
@@ -86,28 +100,92 @@ async function deriveKey(passwordText: string, salt: BufferSource, iterations: n
 }
 
 async function encryptNote(plainText: string, passwordText: string): Promise<string> {
-  const salt = createRandomBytes(16);
-  const iv = createRandomBytes(12);
-  const iterations = 210_000;
-  const key = await deriveKey(passwordText, salt, iterations);
-  const encoded = new TextEncoder().encode(plainText);
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+  await sodium.ready;
+
+  const opslimit = sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE;
+  const memlimit = sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE;
+  const salt = sodium.randombytes_buf(sodium.crypto_pwhash_SALTBYTES);
+  const nonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+  const key = sodium.crypto_pwhash(
+    sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES,
+    passwordText,
+    salt,
+    opslimit,
+    memlimit,
+    sodium.crypto_pwhash_ALG_DEFAULT
+  );
+  const encrypted = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+    plainText,
+    null,
+    null,
+    nonce,
+    key
+  );
   const payload: EncryptedPayload = {
-    v: 1,
-    kdf: "PBKDF2-SHA256",
-    cipher: "AES-GCM",
-    iterations,
+    v: 2,
+    kdf: "libsodium-crypto_pwhash",
+    cipher: "xchacha20poly1305",
+    opslimit,
+    memlimit,
     salt: bytesToBase64(salt),
-    iv: bytesToBase64(iv),
-    data: bytesToBase64(new Uint8Array(encrypted))
+    nonce: bytesToBase64(nonce),
+    data: bytesToBase64(encrypted)
   };
 
   return JSON.stringify(payload);
 }
 
 async function decryptNote(payloadText: string, passwordText: string): Promise<string> {
-  const payload = JSON.parse(payloadText) as Partial<EncryptedPayload>;
+  const payload = JSON.parse(payloadText) as Partial<
+    EncryptedPayload | LegacyEncryptedPayload
+  >;
 
+  if (payload.v === 1) {
+    return decryptLegacyNote(payload, passwordText);
+  }
+
+  if (
+    payload.v !== 2 ||
+    payload.kdf !== "libsodium-crypto_pwhash" ||
+    payload.cipher !== "xchacha20poly1305" ||
+    typeof payload.opslimit !== "number" ||
+    typeof payload.memlimit !== "number" ||
+    typeof payload.salt !== "string" ||
+    typeof payload.nonce !== "string" ||
+    typeof payload.data !== "string"
+  ) {
+    throw new Error("密文格式不正确");
+  }
+
+  await sodium.ready;
+
+  const salt = base64ToBytes(payload.salt);
+  const nonce = base64ToBytes(payload.nonce);
+  const ciphertext = base64ToBytes(payload.data);
+  const key = sodium.crypto_pwhash(
+    sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES,
+    passwordText,
+    salt,
+    payload.opslimit,
+    payload.memlimit,
+    sodium.crypto_pwhash_ALG_DEFAULT
+  );
+  const decrypted = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+    null,
+    ciphertext,
+    null,
+    nonce,
+    key,
+    "text"
+  );
+
+  return decrypted;
+}
+
+async function decryptLegacyNote(
+  payload: Partial<LegacyEncryptedPayload>,
+  passwordText: string
+): Promise<string> {
   if (
     payload.v !== 1 ||
     payload.kdf !== "PBKDF2-SHA256" ||
@@ -123,7 +201,7 @@ async function decryptNote(payloadText: string, passwordText: string): Promise<s
   const salt = base64ToBytes(payload.salt);
   const iv = base64ToBytes(payload.iv);
   const ciphertext = base64ToBytes(payload.data);
-  const key = await deriveKey(passwordText, salt, payload.iterations);
+  const key = await deriveLegacyKey(passwordText, salt, payload.iterations);
   const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
 
   return new TextDecoder().decode(decrypted);
