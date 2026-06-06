@@ -69,8 +69,10 @@ button.secondary:hover:not(:disabled) {
 }
 
 .topbar {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
+  align-items: center;
   border-bottom: 1px solid #d8e0ea;
   padding: 14px 18px;
   background: #ffffff;
@@ -88,6 +90,10 @@ button.secondary:hover:not(:disabled) {
 .brand,
 .header-actions {
   justify-content: space-between;
+}
+
+.brand {
+  flex: 0 0 auto;
 }
 
 .header-actions {
@@ -143,6 +149,7 @@ h1 {
 
 .unlock-bar {
   display: grid;
+  flex: 1 1 620px;
   grid-template-columns: minmax(220px, 420px) auto auto auto auto auto;
 }
 
@@ -204,6 +211,7 @@ h1 {
 }
 
 .error {
+  flex: 1 0 100%;
   margin: 0;
   border-radius: 8px;
   padding: 10px 12px;
